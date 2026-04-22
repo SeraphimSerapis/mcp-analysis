@@ -1,0 +1,19 @@
+[mcp_servers.local_tool]
+command = "node"
+args = ["server.js"]
+env = { MY_VAR = "value" }
+enabled = true
+
+[mcp_servers.remote_tool]
+url = "https://example.com/mcp"
+bearer_token_env_var = "TEST_BEARER"
+http_headers = { "X-Region" = "us-east-1" }
+
+[mcp_servers.env_headers_tool]
+url = "https://example.com/mcp2"
+env_http_headers = { "Authorization" = "TEST_AUTH_VAR" }
+
+[mcp_servers.disabled_tool]
+command = "python"
+args = ["tool.py"]
+enabled = false

@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "stdio-server": {
+      "command": "node",
+      "args": ["server.js"]
+    },
+    "sse-server": {
+      "url": "https://example.com/sse"
+    },
+    "http-server": {
+      "httpUrl": "https://example.com/http",
+      "headers": { "X-Key": "test-value" }
+    },
+    "disabled-server": {
+      "command": "python",
+      "args": ["tool.py"],
+      "disabled": true
+    }
+  }
+}

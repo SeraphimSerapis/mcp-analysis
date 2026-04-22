@@ -1,0 +1,21 @@
+{
+  // OpenCode fixture with mixed server types
+  "mcp": {
+    "local-tool": {
+      "type": "local",
+      "command": ["node", "server.js"],
+      "environment": { "TOKEN": "{env:TEST_TOKEN}" },
+      "enabled": true
+    },
+    "remote-tool": {
+      "type": "remote",
+      "url": "https://example.com/mcp",
+      "headers": { "Authorization": "Bearer {env:TEST_TOKEN}" }
+    },
+    "disabled-tool": {
+      "type": "local",
+      "command": ["python", "tool.py"],
+      "enabled": false
+    }
+  }
+}

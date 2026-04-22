@@ -1,0 +1,4 @@
+# Codex config with no MCP servers — should NOT be detected
+
+model = "o3"
+provider = "openai"
