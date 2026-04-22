@@ -15,10 +15,14 @@ import httpx
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
+from . import __version__
 from .env import resolve_environment, resolve_headers
 from .tokenizer import count_tokens
 from .types import McpServerConfig, ServerResult, ToolAnalysis
-from . import __version__
+
+# Number of retry attempts for transient remote failures.
+_REMOTE_RETRIES = 1
+_RETRY_BACKOFF_S = 1.0
 
 
 async def probe_server(config: McpServerConfig, timeout_s: float) -> ServerResult:
@@ -73,6 +77,21 @@ async def _probe_local(config: McpServerConfig, timeout_s: float) -> list[ToolAn
 
 
 async def _probe_remote(config: McpServerConfig, timeout_s: float) -> list[ToolAnalysis]:
+    """Probe a remote MCP server with retry on transient failures."""
+    last_error: Exception | None = None
+
+    for attempt in range(_REMOTE_RETRIES + 1):
+        try:
+            return await _probe_remote_once(config, timeout_s)
+        except (httpx.TransportError, httpx.TimeoutException) as exc:
+            last_error = exc
+            if attempt < _REMOTE_RETRIES:
+                await asyncio.sleep(_RETRY_BACKOFF_S)
+
+    raise last_error  # type: ignore[misc]
+
+
+async def _probe_remote_once(config: McpServerConfig, timeout_s: float) -> list[ToolAnalysis]:
     if not config.url:
         raise RuntimeError("No URL specified for remote server")
 
@@ -112,7 +131,7 @@ async def _probe_remote(config: McpServerConfig, timeout_s: float) -> list[ToolA
             json={"jsonrpc": "2.0", "method": "tools/list", "id": 2},
         )
 
-        data = _parse_jsonrpc_response(tool_resp.text)
+        data = _parse_jsonrpc_response(tool_resp.text, expected_id=2)
         tools: list[dict] = data.get("result", {}).get("tools", [])
         return [_tool_to_analysis(t) for t in tools]
 
@@ -138,18 +157,38 @@ def _tool_to_analysis(tool: object) -> ToolAnalysis:
     )
 
 
-def _parse_jsonrpc_response(text: str) -> dict:
-    """Parse a JSON-RPC response that may be plain JSON or SSE-wrapped."""
+def _parse_jsonrpc_response(text: str, expected_id: int | None = None) -> dict:  # type: ignore[type-arg]
+    """Parse a JSON-RPC response that may be plain JSON or SSE-wrapped.
+
+    When *expected_id* is given, SSE streams are searched for the data event
+    whose JSON-RPC ``id`` field matches — this prevents returning the wrong
+    response when the server batches multiple events in a single stream.
+    """
     trimmed = text.strip()
     if trimmed.startswith("{") or trimmed.startswith("["):
-        return json.loads(trimmed)
+        result: dict = json.loads(trimmed)
+        return result
 
-    # SSE format: extract last "data:" line containing JSON
+    # SSE format: look for a "data:" line whose JSON-RPC id matches.
+    # Fall back to the last non-[DONE] data line if no id match is found.
+    fallback: dict | None = None
     for line in reversed(trimmed.split("\n")):
         line = line.strip()
-        if line.startswith("data:"):
-            json_str = re.sub(r"^data:\s*", "", line)
-            if json_str and json_str != "[DONE]":
-                return json.loads(json_str)
+        if not line.startswith("data:"):
+            continue
+        json_str = re.sub(r"^data:\s*", "", line)
+        if not json_str or json_str == "[DONE]":
+            continue
+        try:
+            parsed = json.loads(json_str)
+        except json.JSONDecodeError:
+            continue
+        if expected_id is not None and parsed.get("id") == expected_id:
+            return parsed  # type: ignore[no-any-return]
+        if fallback is None:
+            fallback = parsed
+
+    if fallback is not None:
+        return fallback
 
     raise RuntimeError(f"Could not parse MCP response: {trimmed[:200]}")

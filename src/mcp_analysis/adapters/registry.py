@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from .base import ConfigAdapter
-from .opencode import OpenCodeAdapter
-from .gemini import GeminiAdapter
 from .claude import ClaudeAdapter
 from .codex import CodexAdapter
+from .gemini import GeminiAdapter
+from .opencode import OpenCodeAdapter
 
 
 def get_all_adapters() -> list[ConfigAdapter]:

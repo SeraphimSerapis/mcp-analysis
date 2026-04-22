@@ -31,7 +31,7 @@ src/mcp_analysis/
 ```
 ConfigAdapter.parse()          → list[McpServerConfig]  (normalized server list)
   ↓
-analyzer.analyze_adapter()     → probe_server() per server
+analyzer.analyze_adapter()     → probe_server() per server (parallel, semaphore-limited)
   ↓
 probe._probe_local()           → MCP SDK stdio_client → tools/list → list[ToolAnalysis]
 probe._probe_remote()          → httpx JSON-RPC        → tools/list → list[ToolAnalysis]
@@ -174,7 +174,9 @@ Codex uses a different mechanism (`bearer_token_env_var`, `http_headers`, `env_h
 ## Probing (src/mcp_analysis/probe.py)
 
 - **Local (stdio)**: Uses the official MCP Python SDK (`stdio_client` + `ClientSession`). Calls `session.initialize()` then `session.list_tools()`, both wrapped in `asyncio.wait_for()` with configurable timeout.
-- **Remote (HTTP)**: Two-step JSON-RPC over `httpx`: first `initialize`, then `tools/list`. Handles both plain JSON and SSE-wrapped responses. Captures `Mcp-Session` headers for session continuity.
+- **Remote (HTTP)**: Two-step JSON-RPC over `httpx`: first `initialize`, then `tools/list`. Handles both plain JSON and SSE-wrapped responses. Captures `Mcp-Session` headers for session continuity. **Retries once** on transient `httpx.TransportError` / `TimeoutException` with 1s backoff.
+- **SSE parsing**: When an SSE stream contains multiple `data:` events, the parser matches on JSON-RPC `id` field (not just the last event) to avoid returning the wrong response.
+- **Parallelism**: `analyze_adapter()` probes all servers concurrently via `asyncio.gather()` with a semaphore (default max 5) to avoid spawning too many subprocesses.
 
 Both paths use the configurable timeout (default 15s).
 
@@ -205,3 +207,6 @@ The table distinguishes between "No MCP servers configured" (zero servers in con
 - `detect()` must validate config content, not just file existence.
 - Status/progress output goes to `stderr` (via `rich.Console(stderr=True)`); formatted reports go to `stdout`.
 - Preserve all existing comments and docstrings when editing.
+- **Linting**: `ruff` (rules: E, F, W, I, UP, B, SIM). Run `uv run ruff check src/`.
+- **Type checking**: `mypy` with `ignore_missing_imports` and `check_untyped_defs`. Run `uv run mypy src/mcp_analysis/`.
+- CI runs lint → type check → tests (fail fast on trivial issues).

@@ -26,8 +26,11 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
-      - name: Run tests
-        run: uv run pytest -v
+      - name: Lint
+        run: uv run ruff check src/
 
       - name: Type check
-        run: uv run python -m py_compile src/mcp_analysis/cli.py
+        run: uv run mypy src/mcp_analysis/
+
+      - name: Run tests
+        run: uv run pytest -v

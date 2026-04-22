@@ -14,8 +14,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from .base import ConfigAdapter
 from mcp_analysis.types import McpServerConfig
+
+from .base import ConfigAdapter
 
 _DEFAULT_PATH = Path.home() / ".gemini" / "settings.json"
 

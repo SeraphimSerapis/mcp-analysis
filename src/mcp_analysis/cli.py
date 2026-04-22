@@ -10,7 +10,7 @@ from rich.console import Console
 
 from .adapters.registry import get_all_adapters
 from .analyzer import analyze_adapter, build_report
-from .output import format_table, format_json, format_markdown
+from .output import format_json, format_markdown, format_table
 from .tokenizer import init_tokenizer
 from .types import CliOptions
 
