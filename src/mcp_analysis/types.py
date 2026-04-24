@@ -80,3 +80,5 @@ class CliOptions:
     skip_local: bool = False
     timeout: float = 15.0
     no_tokenizer: bool = False
+    dry_run: bool = False
+

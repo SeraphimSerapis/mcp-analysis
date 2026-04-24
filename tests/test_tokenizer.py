@@ -1,6 +1,6 @@
 """Tests for tokenizer module."""
 
-from mcp_analysis.tokenizer import init_tokenizer, count_tokens, has_exact_tokenizer
+from mcp_analysis.tokenizer import count_tokens, has_exact_tokenizer, init_tokenizer
 
 
 class TestTokenizer:

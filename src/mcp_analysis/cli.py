@@ -28,6 +28,7 @@ stderr = Console(stderr=True)
 @click.option("--skip-local", is_flag=True, help="Skip local servers (no subprocess spawning)")
 @click.option("--timeout", default=15.0, show_default=True, help="Timeout per server in seconds")
 @click.option("--no-tokenizer", is_flag=True, help="Disable exact tokenizer, use chars/4 estimate")
+@click.option("--dry-run", is_flag=True, help="Show discovered servers without probing them")
 @click.version_option(package_name="mcp-analysis")
 def main(
     analyze_all: bool,
@@ -40,6 +41,7 @@ def main(
     skip_local: bool,
     timeout: float,
     no_tokenizer: bool,
+    dry_run: bool,
 ) -> None:
     """Analyze MCP tool token consumption across coding AI CLIs."""
     options = CliOptions(
@@ -53,18 +55,24 @@ def main(
         skip_local=skip_local,
         timeout=timeout,
         no_tokenizer=no_tokenizer,
+        dry_run=dry_run,
     )
 
-    # If any specific CLI flag was set, disable --all
-    if options.opencode or options.gemini or options.claude or options.codex:
+    # If any specific CLI flag was set, disable --all.
+    # Check dynamically against all registered adapter slugs so that
+    # new adapters don't require updating this condition.
+    all_adapters = get_all_adapters()
+    if any(getattr(options, a.slug, False) for a in all_adapters):
         options.all = False
 
     asyncio.run(_run(options))
 
 
 async def _run(options: CliOptions) -> None:
-    # Initialize tokenizer
-    if not options.no_tokenizer:
+    # Initialize tokenizer (skip in dry-run mode)
+    if options.dry_run:
+        pass
+    elif not options.no_tokenizer:
         stderr.print("[dim]Loading tokenizer...[/]", end="")
         ok = init_tokenizer()
         if ok:
@@ -96,6 +104,25 @@ async def _run(options: CliOptions) -> None:
     names = ", ".join(a.name for a in adapters_to_run)
     stderr.print(f"\n[dim]Found {len(adapters_to_run)} CLI(s): {names}[/]\n")
 
+    # Dry-run mode: show discovered servers without probing
+    if options.dry_run:
+        for adapter in adapters_to_run:
+            stderr.print(f"[bold]{adapter.name}[/] [dim]({adapter.get_config_path()})[/]")
+            servers = await adapter.parse()
+            enabled = [s for s in servers if s.enabled]
+            disabled = len(servers) - len(enabled)
+
+            for server in enabled:
+                icon = "[blue]☁[/]" if server.type == "remote" else "[green]⚙[/]"
+                detail = server.url or " ".join(server.command or [])
+                skip_marker = " [dim](skip-local)[/]" if options.skip_local and server.type == "local" else ""
+                stderr.print(f"  {icon} {server.name} [dim]→ {detail}[/]{skip_marker}")
+
+            if disabled > 0:
+                stderr.print(f"  [dim]({disabled} additional server(s) disabled)[/]")
+            stderr.print()
+        return
+
     # Analyze
     analyses = []
     for adapter in adapters_to_run:
@@ -108,6 +135,13 @@ async def _run(options: CliOptions) -> None:
 
     report = build_report(analyses)
 
+    # Exit code 2 when all probes failed (distinct from exit 1 = no configs found)
+    if analyses and all(
+        all(s.error for s in a.servers) and a.servers
+        for a in analyses
+    ):
+        stderr.print("\n[red]All server probes failed.[/]")
+
     # Output
     if options.json_output:
         click.echo(format_json(report))
@@ -115,3 +149,11 @@ async def _run(options: CliOptions) -> None:
         click.echo(format_markdown(report))
     else:
         click.echo(format_table(report))
+
+    # Set exit code after output so the report is still emitted
+    if analyses and all(
+        all(s.error for s in a.servers) and a.servers
+        for a in analyses
+    ):
+        sys.exit(2)
+

@@ -47,6 +47,9 @@ mcp-analysis
 mcp-analysis --opencode
 mcp-analysis --gemini
 
+# Preview discovered servers without probing
+mcp-analysis --dry-run
+
 # Skip local servers (no subprocess spawning)
 mcp-analysis --skip-local
 
@@ -60,6 +63,14 @@ mcp-analysis --no-tokenizer
 # Custom timeout per server (seconds)
 mcp-analysis --timeout 30
 ```
+
+### Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success (at least one server probed successfully) |
+| 1 | No CLI configurations found |
+| 2 | All server probes failed |
 
 ## Example Output
 

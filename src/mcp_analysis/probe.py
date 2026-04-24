@@ -10,6 +10,7 @@ import asyncio
 import json
 import os
 import re
+from typing import Any
 
 import httpx
 from mcp import ClientSession, StdioServerParameters
@@ -77,21 +78,32 @@ async def _probe_local(config: McpServerConfig, timeout_s: float) -> list[ToolAn
 
 
 async def _probe_remote(config: McpServerConfig, timeout_s: float) -> list[ToolAnalysis]:
-    """Probe a remote MCP server with retry on transient failures."""
+    """Probe a remote MCP server with retry on transient failures.
+
+    A single ``httpx.AsyncClient`` is shared across retry attempts so that
+    the underlying connection pool is reused.
+    """
+    if not config.url:
+        raise RuntimeError("No URL specified for remote server")
+
     last_error: Exception | None = None
 
-    for attempt in range(_REMOTE_RETRIES + 1):
-        try:
-            return await _probe_remote_once(config, timeout_s)
-        except (httpx.TransportError, httpx.TimeoutException) as exc:
-            last_error = exc
-            if attempt < _REMOTE_RETRIES:
-                await asyncio.sleep(_RETRY_BACKOFF_S)
+    async with httpx.AsyncClient(timeout=timeout_s) as client:
+        for attempt in range(_REMOTE_RETRIES + 1):
+            try:
+                return await _probe_remote_once(config, client)
+            except (httpx.TransportError, httpx.TimeoutException) as exc:
+                last_error = exc
+                if attempt < _REMOTE_RETRIES:
+                    await asyncio.sleep(_RETRY_BACKOFF_S)
 
     raise last_error  # type: ignore[misc]
 
 
-async def _probe_remote_once(config: McpServerConfig, timeout_s: float) -> list[ToolAnalysis]:
+async def _probe_remote_once(
+    config: McpServerConfig,
+    client: httpx.AsyncClient,
+) -> list[ToolAnalysis]:
     if not config.url:
         raise RuntimeError("No URL specified for remote server")
 
@@ -101,48 +113,49 @@ async def _probe_remote_once(config: McpServerConfig, timeout_s: float) -> list[
         **resolve_headers(config.headers),
     }
 
-    async with httpx.AsyncClient(timeout=timeout_s) as client:
-        # Step 1: Initialize
-        init_resp = await client.post(
-            config.url,
-            headers=headers,
-            json={
-                "jsonrpc": "2.0",
-                "method": "initialize",
-                "params": {
-                    "protocolVersion": "2024-11-05",
-                    "capabilities": {},
-                    "clientInfo": {"name": "mcp-analysis", "version": __version__},
-                },
-                "id": 1,
+    # Step 1: Initialize
+    init_resp = await client.post(
+        config.url,
+        headers=headers,
+        json={
+            "jsonrpc": "2.0",
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {"name": "mcp-analysis", "version": __version__},
             },
-        )
+            "id": 1,
+        },
+    )
+    init_resp.raise_for_status()
 
-        session_id = init_resp.headers.get("mcp-session")
+    session_id = init_resp.headers.get("mcp-session")
 
-        # Step 2: List tools
-        tool_headers = {**headers}
-        if session_id:
-            tool_headers["Mcp-Session"] = session_id
+    # Step 2: List tools
+    tool_headers = {**headers}
+    if session_id:
+        tool_headers["Mcp-Session"] = session_id
 
-        tool_resp = await client.post(
-            config.url,
-            headers=tool_headers,
-            json={"jsonrpc": "2.0", "method": "tools/list", "id": 2},
-        )
+    tool_resp = await client.post(
+        config.url,
+        headers=tool_headers,
+        json={"jsonrpc": "2.0", "method": "tools/list", "id": 2},
+    )
+    tool_resp.raise_for_status()
 
-        data = _parse_jsonrpc_response(tool_resp.text, expected_id=2)
-        tools: list[dict] = data.get("result", {}).get("tools", [])
-        return [_tool_to_analysis(t) for t in tools]
+    data = _parse_jsonrpc_response(tool_resp.text, expected_id=2)
+    tools: list[dict[str, Any]] = data.get("result", {}).get("tools", [])
+    return [_tool_to_analysis(t) for t in tools]
 
 
 # ─── Helpers ───────────────────────────────────────────────────────────
 
 
-def _tool_to_analysis(tool: object) -> ToolAnalysis:
+def _tool_to_analysis(tool: Any) -> ToolAnalysis:
     """Convert an MCP tool (dict or pydantic model) to ToolAnalysis."""
     if hasattr(tool, "model_dump"):
-        d = tool.model_dump()  # type: ignore[union-attr]
+        d: dict[str, Any] = tool.model_dump()
     elif isinstance(tool, dict):
         d = tool
     else:

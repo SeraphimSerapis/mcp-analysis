@@ -1,9 +1,10 @@
 """Tests for output formatters."""
 
 import json
+from unittest.mock import patch
 
-from mcp_analysis.output import format_table, format_json, format_markdown
-from mcp_analysis.types import FullReport, CliAnalysis, ServerResult, ToolAnalysis
+from mcp_analysis.output import format_json, format_markdown, format_table
+from mcp_analysis.types import CliAnalysis, FullReport, ServerResult, ToolAnalysis
 
 
 def _make_report(**overrides) -> FullReport:
@@ -86,13 +87,45 @@ class TestFormatMarkdown:
         md = format_markdown(report)
         assert "No MCP servers configured" in md
 
+    def test_error_server_row(self):
+        """Error rows should show error text in the correct column."""
+        report = _make_report(
+            analyses=[CliAnalysis(
+                cli="ErrCLI",
+                slug="errcli",
+                config_path="/p",
+                servers=[ServerResult(name="broken", type="remote", error="Connection refused")],
+            )]
+        )
+        md = format_markdown(report)
+        assert "broken" in md
+        assert "⚠ error" in md
+
 
 class TestFormatTable:
     def test_contains_cli_name(self):
         output = format_table(_make_report())
         assert "TestCLI" in output
 
-    def test_contains_budget_reference(self):
+    @patch("mcp_analysis.output.has_exact_tokenizer", return_value=False)
+    def test_contains_budget_reference(self, _mock):
+        """Budget bars appear when estimated tokens > 0 (exact tokenizer disabled)."""
         output = format_table(_make_report())
         assert "Context budget" in output
         assert "MiniMax" in output
+
+    @patch("mcp_analysis.output.has_exact_tokenizer", return_value=False)
+    def test_error_server_in_table(self, _mock):
+        """Error servers show error message in the table."""
+        report = _make_report(
+            analyses=[CliAnalysis(
+                cli="ErrCLI",
+                slug="errcli",
+                config_path="/p",
+                servers=[ServerResult(name="broken", type="local", error="Timed out after 15s")],
+            )]
+        )
+        output = format_table(report)
+        assert "broken" in output
+        assert "error" in output
+

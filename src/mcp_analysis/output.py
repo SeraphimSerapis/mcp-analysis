@@ -152,7 +152,7 @@ def format_markdown(report: FullReport) -> str:
         for server in sorted_servers:
             tokens = (server.exact_tokens if exact else server.estimated_tokens) or 0
             if server.error:
-                lines.append(f"| {server.name} | {server.type} | ⚠ | error | {server.error[:40]} |")
+                lines.append(f"| {server.name} | {server.type} | — | ⚠ error | {server.error[:40]} |")
             else:
                 lines.append(
                     f"| **{server.name}** | {server.type} | {len(server.tools)} | {tokens:,} | {server.total_chars:,} |"

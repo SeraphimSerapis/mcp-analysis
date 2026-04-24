@@ -184,7 +184,7 @@ Both paths use the configurable timeout (default 15s).
 
 Three formatters, all driven by `FullReport`:
 
-- **Table** (default): Rich terminal table with progress bars showing context budget usage against GPT-4o, Claude, Gemini 2.5 Pro, and Qwen 3.5.
+- **Table** (default): Rich terminal table with progress bars showing context budget usage against MiniMax M2.7 (192K), Gemma 4 (256K), Qwen 3.5 (256K), Opus 4.7 (1M), and Gemini 3.1 Pro (1M).
 - **JSON** (`--json`): Machine-readable full report via `dataclasses.asdict()`.
 - **Markdown** (`--markdown`): GitHub-friendly table format.
 

@@ -4,10 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from mcp_analysis.adapters.opencode import OpenCodeAdapter
-from mcp_analysis.adapters.gemini import GeminiAdapter
 from mcp_analysis.adapters.claude import ClaudeAdapter
 from mcp_analysis.adapters.codex import CodexAdapter
+from mcp_analysis.adapters.gemini import GeminiAdapter
+from mcp_analysis.adapters.opencode import OpenCodeAdapter
 
 FIXTURES = Path(__file__).parent / "fixtures"
 

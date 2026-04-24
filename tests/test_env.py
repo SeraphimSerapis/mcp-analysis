@@ -1,10 +1,8 @@
 """Tests for environment variable resolution."""
 
-import os
 
-import pytest
 
-from mcp_analysis.env import resolve_env_vars, resolve_headers, resolve_environment
+from mcp_analysis.env import resolve_env_vars, resolve_environment, resolve_headers
 
 
 class TestResolveEnvVars:
