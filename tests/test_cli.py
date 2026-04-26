@@ -344,6 +344,24 @@ class TestCliDryRun:
         result = runner.invoke(main, ["--help"])
         assert "--dry-run" in result.output
 
+    def test_dry_run_parse_failure_handled(self):
+        """If adapter.parse() raises during --dry-run, report the error and continue."""
+        runner = CliRunner()
+
+        with patch("mcp_analysis.cli.get_all_adapters") as mock_adapters:
+            mock_adapter = AsyncMock()
+            mock_adapter.name = "BrokenCLI"
+            mock_adapter.slug = "brokencli"
+            mock_adapter.detect = AsyncMock(return_value=True)
+            mock_adapter.get_config_path = lambda: "/broken/path"
+            mock_adapter.parse = AsyncMock(side_effect=ValueError("Invalid TOML"))
+            mock_adapters.return_value = [mock_adapter]
+
+            result = runner.invoke(main, ["--dry-run"])
+
+        assert result.exit_code == 0
+        assert "Failed to parse config" in result.output
+
 
 class TestCliExitCodes:
     def test_exit_2_when_all_probes_fail(self):

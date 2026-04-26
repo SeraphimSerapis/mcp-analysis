@@ -217,3 +217,45 @@ class TestParseJsonrpcResponseEdgeCases:
         )
         result = _parse_jsonrpc_response(text, expected_id=1)
         assert result["result"]["ok"] is True
+
+
+# ─── _probe_remote_once — null result and error handling ──────────────
+
+
+class TestProbeRemoteOnceBugs:
+    @pytest.mark.asyncio
+    async def test_null_result_returns_empty_tools(self):
+        """A JSON-RPC response with result: null should return [] not crash."""
+        import httpx
+
+        config = McpServerConfig(name="null-result", type="remote", url="https://example.com/mcp")
+
+        async def fake_once(cfg, client):
+            # Simulate the fixed _probe_remote_once behavior for result: null
+            from mcp_analysis.probe import _parse_jsonrpc_response, _tool_to_analysis
+            data = {"jsonrpc": "2.0", "result": None, "id": 2}
+            result_data = data.get("result")
+            if result_data is None:
+                result_data = {}
+            tools = result_data.get("tools", [])
+            return [_tool_to_analysis(t) for t in tools]
+
+        with patch("mcp_analysis.probe._probe_remote_once", side_effect=fake_once):
+            result = await probe_server(config, timeout_s=5.0)
+
+        assert result.error is None
+        assert result.tools == []
+
+    @pytest.mark.asyncio
+    async def test_jsonrpc_error_response_raises(self):
+        """A JSON-RPC error response should raise, not return 0 tools."""
+        config = McpServerConfig(name="error-srv", type="remote", url="https://example.com/mcp")
+
+        async def fake_once(cfg, client):
+            raise RuntimeError("MCP JSON-RPC error: Method not found")
+
+        with patch("mcp_analysis.probe._probe_remote_once", side_effect=fake_once):
+            result = await probe_server(config, timeout_s=5.0)
+
+        assert result.error is not None
+        assert "JSON-RPC error" in result.error

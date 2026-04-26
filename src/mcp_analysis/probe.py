@@ -104,8 +104,7 @@ async def _probe_remote_once(
     config: McpServerConfig,
     client: httpx.AsyncClient,
 ) -> list[ToolAnalysis]:
-    if not config.url:
-        raise RuntimeError("No URL specified for remote server")
+    # Note: config.url is guaranteed non-None by the caller (_probe_remote).
 
     headers = {
         "Content-Type": "application/json",
@@ -115,7 +114,7 @@ async def _probe_remote_once(
 
     # Step 1: Initialize
     init_resp = await client.post(
-        config.url,
+        config.url,  # type: ignore[arg-type]
         headers=headers,
         json={
             "jsonrpc": "2.0",
@@ -138,14 +137,25 @@ async def _probe_remote_once(
         tool_headers["Mcp-Session"] = session_id
 
     tool_resp = await client.post(
-        config.url,
+        config.url,  # type: ignore[arg-type]
         headers=tool_headers,
         json={"jsonrpc": "2.0", "method": "tools/list", "id": 2},
     )
     tool_resp.raise_for_status()
 
     data = _parse_jsonrpc_response(tool_resp.text, expected_id=2)
-    tools: list[dict[str, Any]] = data.get("result", {}).get("tools", [])
+
+    # Check for JSON-RPC error responses (e.g. method not found).
+    if "error" in data:
+        err = data["error"]
+        msg = err.get("message", str(err)) if isinstance(err, dict) else str(err)
+        raise RuntimeError(f"MCP JSON-RPC error: {msg}")
+
+    # Guard against result: null (valid JSON-RPC but no tools payload).
+    result_data = data.get("result")
+    if result_data is None:
+        result_data = {}
+    tools: list[dict[str, Any]] = result_data.get("tools", [])
     return [_tool_to_analysis(t) for t in tools]
 
 

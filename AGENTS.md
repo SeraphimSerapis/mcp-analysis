@@ -174,7 +174,7 @@ Codex uses a different mechanism (`bearer_token_env_var`, `http_headers`, `env_h
 ## Probing (src/mcp_analysis/probe.py)
 
 - **Local (stdio)**: Uses the official MCP Python SDK (`stdio_client` + `ClientSession`). Calls `session.initialize()` then `session.list_tools()`, both wrapped in `asyncio.wait_for()` with configurable timeout.
-- **Remote (HTTP)**: Two-step JSON-RPC over `httpx`: first `initialize`, then `tools/list`. Handles both plain JSON and SSE-wrapped responses. Captures `Mcp-Session` headers for session continuity. **Retries once** on transient `httpx.TransportError` / `TimeoutException` with 1s backoff.
+- **Remote (HTTP)**: Two-step JSON-RPC over `httpx`: first `initialize`, then `tools/list`. Handles both plain JSON and SSE-wrapped responses. Captures `Mcp-Session` headers for session continuity. **Retries once** on transient `httpx.TransportError` / `TimeoutException` with 1s backoff. Raises `RuntimeError` on JSON-RPC error responses (e.g. method not found) and gracefully handles `result: null` as zero tools.
 - **SSE parsing**: When an SSE stream contains multiple `data:` events, the parser matches on JSON-RPC `id` field (not just the last event) to avoid returning the wrong response.
 - **Parallelism**: `analyze_adapter()` probes all servers concurrently via `asyncio.gather()` with a semaphore (default max 5) to avoid spawning too many subprocesses.
 
@@ -185,7 +185,7 @@ Both paths use the configurable timeout (default 15s).
 Three formatters, all driven by `FullReport`:
 
 - **Table** (default): Rich terminal table with progress bars showing context budget usage against MiniMax M2.7 (192K), Gemma 4 (256K), Qwen 3.5 (256K), Opus 4.7 (1M), and Gemini 3.1 Pro (1M).
-- **JSON** (`--json`): Machine-readable full report via `dataclasses.asdict()`.
+- **JSON** (`--json`): Machine-readable full report via `dataclasses.asdict()`. **Header values are redacted** (`[REDACTED]`) to prevent accidental leakage of bearer tokens and other secrets.
 - **Markdown** (`--markdown`): GitHub-friendly table format.
 
 The table distinguishes between "No MCP servers configured" (zero servers in config) and "N server(s) configured but disabled" (servers exist but all have `enabled: False`).

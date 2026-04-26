@@ -108,7 +108,13 @@ async def _run(options: CliOptions) -> None:
     if options.dry_run:
         for adapter in adapters_to_run:
             stderr.print(f"[bold]{adapter.name}[/] [dim]({adapter.get_config_path()})[/]")
-            servers = await adapter.parse()
+            try:
+                servers = await adapter.parse()
+            except Exception as exc:
+                stderr.print(f"  [red]✗ Failed to parse config: {exc}[/]")
+                stderr.print()
+                continue
+
             enabled = [s for s in servers if s.enabled]
             disabled = len(servers) - len(enabled)
 

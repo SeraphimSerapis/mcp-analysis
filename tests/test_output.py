@@ -57,6 +57,29 @@ class TestFormatJson:
         output = json.loads(format_json(_make_report()))
         assert output["timestamp"] == "2026-01-01T00:00:00.000Z"
 
+    def test_headers_are_redacted(self):
+        """Bearer tokens and other header values must not appear in JSON output."""
+        report = _make_report(
+            analyses=[CliAnalysis(
+                cli="SecCLI",
+                slug="seccli",
+                config_path="/p",
+                servers=[ServerResult(
+                    name="token-srv",
+                    type="remote",
+                    tools=[],
+                )],
+            )]
+        )
+        # Inject headers via the underlying ServerResult (simulates Codex adapter)
+        report.analyses[0].servers[0].__dict__  # ensure writable
+        # Manually set headers on the server config (ServerResult doesn't have headers,
+        # but McpServerConfig does; test the recursive redaction on the full dict)
+        from mcp_analysis.output import _redact_headers
+        data = {"analyses": [{"servers": [{"headers": {"Authorization": "Bearer sk-secret123"}}]}]}
+        _redact_headers(data)
+        assert data["analyses"][0]["servers"][0]["headers"]["Authorization"] == "[REDACTED]"
+
 
 class TestFormatMarkdown:
     def test_contains_heading(self):

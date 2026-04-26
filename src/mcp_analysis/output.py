@@ -8,7 +8,7 @@ from rich.console import Console
 from rich.table import Table
 
 from .tokenizer import has_exact_tokenizer
-from .types import FullReport
+from .types import FullReport, ServerResult
 
 _BUDGETS = [
     ("MiniMax M2.7 (192K)", 196_608),
@@ -48,11 +48,7 @@ def format_table(report: FullReport) -> str:
             table.add_column(tok_header, justify="right", min_width=14)
             table.add_column("Chars", justify="right", min_width=10)
 
-            sorted_servers = sorted(
-                cli.servers,
-                key=lambda s: (s.exact_tokens if exact else s.estimated_tokens) or 0,
-                reverse=True,
-            )
+            sorted_servers = _sorted_servers(cli.servers, exact)
 
             for server in sorted_servers:
                 tokens = (server.exact_tokens if exact else server.estimated_tokens) or 0
@@ -104,12 +100,35 @@ def _print_budget(console: Console, token_val: int) -> None:
 
 # ─── JSON ──────────────────────────────────────────────────────────────
 
+_REDACTED = "[REDACTED]"
+
 
 def format_json(report: FullReport) -> str:
-    """Render as JSON."""
+    """Render as JSON.
+
+    Header values are redacted to prevent accidental leakage of bearer
+    tokens and other secrets in the serialized output.
+    """
     import dataclasses
 
-    return json.dumps(dataclasses.asdict(report), indent=2)
+    raw = dataclasses.asdict(report)
+    _redact_headers(raw)
+    return json.dumps(raw, indent=2)
+
+
+def _redact_headers(obj: dict | list) -> None:  # type: ignore[type-arg]
+    """Recursively redact all ``headers`` values in a nested dict/list."""
+    if isinstance(obj, dict):
+        for key, value in obj.items():
+            if key == "headers" and isinstance(value, dict):
+                for hk in value:
+                    value[hk] = _REDACTED
+            elif isinstance(value, (dict, list)):
+                _redact_headers(value)
+    elif isinstance(obj, list):
+        for item in obj:
+            if isinstance(item, (dict, list)):
+                _redact_headers(item)
 
 
 # ─── Markdown ──────────────────────────────────────────────────────────
@@ -143,11 +162,7 @@ def format_markdown(report: FullReport) -> str:
         lines.append(f"| Server | Type | Tools | {tok_header} | Chars |")
         lines.append("|---|---|---:|---:|---:|")
 
-        sorted_servers = sorted(
-            cli.servers,
-            key=lambda s: (s.exact_tokens if exact else s.estimated_tokens) or 0,
-            reverse=True,
-        )
+        sorted_servers = _sorted_servers(cli.servers, exact)
 
         for server in sorted_servers:
             tokens = (server.exact_tokens if exact else server.estimated_tokens) or 0
@@ -163,3 +178,15 @@ def format_markdown(report: FullReport) -> str:
         lines.append("")
 
     return "\n".join(lines)
+
+
+# ─── Helpers ───────────────────────────────────────────────────────────
+
+
+def _sorted_servers(servers: list[ServerResult], use_exact: bool) -> list[ServerResult]:
+    """Sort servers by token count (descending)."""
+    return sorted(
+        servers,
+        key=lambda s: (s.exact_tokens if use_exact else s.estimated_tokens) or 0,
+        reverse=True,
+    )
